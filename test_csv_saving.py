@@ -18,7 +18,6 @@ class TestCSVSaver:
         self.current_csv_file = None
         self.csv_headers_written = False
         self.total_schools_saved = 0
-
     def initialize_csv_file(self, state_name):
         """Initialize CSV file for incremental saving with enhanced debugging"""
         try:

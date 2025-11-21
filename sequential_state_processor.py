@@ -7,6 +7,7 @@ Enhanced Sequential State Processor - Complete Phase 1 → Phase 2 workflow per 
 - Robust connection error handling and retry mechanisms
 - Maintains ultra-fast performance optimizations
 - Resilient to connection issues with automatic recovery
+- Fixed ChromeDriver compatibility with automatic version management
 """
 
 import time
@@ -89,7 +90,7 @@ class EnhancedStatewiseSchoolScraper:
                 return False
 
             # Balanced wait for initial results to load (reliability focused)
-            time.sleep(2.5)  # Increased from 1.5s to 2.5s for better reliability
+            time.sleep(10)  # Increased from 1.5s to 2.5s for better reliability
 
             # Try to set results per page to 100 with verification
             results_per_page_success = self.set_results_per_page_to_100()
@@ -285,12 +286,7 @@ class EnhancedStatewiseSchoolScraper:
                 return False
 
             # Define CSV headers (matching Phase 1 specification exactly)
-            headers = [
-                'has_know_more_link', 'phase2_ready', 'state', 'state_id', 'district', 'district_id',
-                'extraction_date', 'udise_code', 'school_name', 'know_more_link', 'email',
-                'operational_status', 'school_category', 'school_management', 'school_type',
-                'school_location', 'address', 'pin_code'
-            ]
+            headers = ['has_know_more_link', 'phase2_ready', 'state', 'state_id', 'district', 'district_id', 'extraction_date', 'udise_code', 'operational_status', 'school_name', 'know_more_link', 'edu_district', 'edu_block', 'academic_year', 'school_category', 'school_management', 'class_range', 'school_type', 'school_location', 'address', 'pin_code', 'email']
 
             # Write headers if this is the first write
             if not self.csv_headers_written:
@@ -319,6 +315,9 @@ class EnhancedStatewiseSchoolScraper:
                     writer = csv.DictWriter(csvfile, fieldnames=headers)
 
                     rows_written = 0
+                    pin_codes_found = 0
+                    emails_found = 0
+
                     for school in schools_data:
                         # Ensure all required fields are present and map field names
                         school_row = {}
@@ -339,8 +338,17 @@ class EnhancedStatewiseSchoolScraper:
                                 # Map 'location' field to 'school_location'
                                 school_row[header] = school.get('location', 'N/A')
                             elif header == 'pin_code':
-                                # Map 'pincode' field to 'pin_code'
-                                school_row[header] = school.get('pincode', 'N/A')
+                                # Map 'pin_code' field correctly (base scraper uses 'pin_code', not 'pincode')
+                                pin_code_value = school.get('pin_code', 'N/A')
+                                school_row[header] = pin_code_value
+                                if pin_code_value != 'N/A':
+                                    pin_codes_found += 1
+                            elif header == 'email':
+                                # Map email field
+                                email_value = school.get('email', 'N/A')
+                                school_row[header] = email_value
+                                if email_value != 'N/A':
+                                    emails_found += 1
                             elif header == 'address':
                                 # Use address field or fallback to location
                                 school_row[header] = school.get('address', school.get('location', 'N/A'))
@@ -359,6 +367,8 @@ class EnhancedStatewiseSchoolScraper:
                     file_size = os.path.getsize(self.current_csv_file)
                     logger.info(f"   💾 Saved page {page_number} with {len(schools_data)} schools to CSV")
                     logger.info(f"   📊 Total schools saved so far: {self.total_schools_saved}")
+                    logger.info(f"   📍 Pin codes found: {pin_codes_found}/{len(schools_data)} schools")
+                    logger.info(f"   📧 Emails found: {emails_found}/{len(schools_data)} schools")
                     logger.info(f"   📄 Current file size: {file_size} bytes")
                 else:
                     logger.error(f"   ❌ CSV file disappeared after writing: {self.current_csv_file}")
@@ -551,33 +561,47 @@ class EnhancedStatewiseSchoolScraper:
         return False
 
     def extract_email_from_school_element(self, school_element):
-        """Ultra-fast email extraction with single DOM access"""
+        """Enhanced email extraction with better patterns and debugging"""
         try:
             # Single DOM access for maximum performance
             element_html = school_element.get_attribute('innerHTML')
-            if not element_html:
+            element_text = school_element.text
+
+            if not element_html and not element_text:
                 return 'N/A'
 
-            # Pre-compiled regex patterns for maximum speed
+            # Enhanced pre-compiled regex patterns for maximum speed and better coverage
             if not hasattr(self, '_email_patterns'):
                 self._email_patterns = [
                     re.compile(r'href="mailto:([^"]+)"', re.IGNORECASE),  # mailto links
                     re.compile(r'<span[^>]*>([^<]*@[^<]*)</span>', re.IGNORECASE),  # span with email
+                    re.compile(r'<div[^>]*>([^<]*@[^<]*)</div>', re.IGNORECASE),  # div with email
+                    re.compile(r'Email[:\s]*([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,})', re.IGNORECASE),  # Email: pattern
+                    re.compile(r'E-mail[:\s]*([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,})', re.IGNORECASE),  # E-mail: pattern
                     re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')  # general email
                 ]
 
-            # Fast pattern matching with early exit
-            for i, pattern in enumerate(self._email_patterns):
-                match = pattern.search(element_html)
-                if match:
-                    email = match.group(1) if i < 2 else match.group(0)
-                    email = email.strip()
-                    if email and '@' in email and len(email) > 5:  # Basic validation
-                        return email
+            # Try HTML first, then text content
+            search_content = [element_html, element_text] if element_html else [element_text]
+
+            for content in search_content:
+                if not content:
+                    continue
+
+                # Fast pattern matching with early exit
+                for i, pattern in enumerate(self._email_patterns):
+                    match = pattern.search(content)
+                    if match:
+                        # For patterns 0-4 (specific patterns), use group(1); for pattern 5 (general), use group(0)
+                        email = match.group(1) if i < 5 else match.group(0)
+                        email = email.strip()
+                        if email and '@' in email and len(email) > 5:  # Basic validation
+                            return email
 
             return 'N/A'
 
-        except:
+        except Exception as e:
+            logger.debug(f"Error in email extraction: {e}")
             return 'N/A'
 
     def extract_single_school_data_with_email(self, school_element):

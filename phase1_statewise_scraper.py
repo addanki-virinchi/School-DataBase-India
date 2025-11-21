@@ -21,6 +21,15 @@ import logging
 from datetime import datetime
 import os
 
+# Import webdriver-manager for automatic ChromeDriver version management
+try:
+    from webdriver_manager.chrome import ChromeDriverManager
+    WEBDRIVER_MANAGER_AVAILABLE = True
+except ImportError:
+    WEBDRIVER_MANAGER_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.warning("⚠️ webdriver-manager not available. Install with: pip install webdriver-manager")
+
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -36,8 +45,55 @@ class StatewiseSchoolScraper:
         self.state_schools_no_links = {}    # Schools WITHOUT know_more_links
         
     def setup_driver(self):
-        """Initialize the Chrome browser driver with optimized performance settings"""
+        """Initialize the Chrome browser driver with automatic version management and optimized performance settings"""
         try:
+            logger.info("🔧 Setting up Chrome driver with automatic version management...")
+
+            # Try webdriver-manager first for automatic version management
+            if WEBDRIVER_MANAGER_AVAILABLE:
+                try:
+                    logger.info("🔄 Using webdriver-manager for automatic ChromeDriver version management...")
+
+                    # Setup Chrome options for optimal performance and reliability
+                    options = Options()
+
+                    # Core stability options
+                    options.add_argument("--no-sandbox")
+                    options.add_argument("--disable-dev-shm-usage")
+                    options.add_argument("--disable-gpu")
+                    options.add_argument("--disable-extensions")
+                    options.add_argument("--disable-blink-features=AutomationControlled")
+
+                    # Performance optimizations (balanced for speed and functionality)
+                    options.add_argument("--disable-images")  # Speed optimization
+                    options.add_argument("--disable-plugins")
+                    options.add_argument("--disable-background-timer-throttling")
+                    options.add_argument("--disable-renderer-backgrounding")
+                    options.add_argument("--disable-backgrounding-occluded-windows")
+
+                    # Memory and resource optimizations
+                    options.add_argument("--memory-pressure-off")
+                    options.add_argument("--max_old_space_size=4096")
+
+                    # Initialize Chrome driver with automatic version management
+                    service = Service(ChromeDriverManager().install())
+                    self.driver = webdriver.Chrome(service=service, options=options)
+                    self.driver.maximize_window()
+
+                    # Balanced timeouts for reliability and speed
+                    self.driver.implicitly_wait(5)  # Balanced from 3 for stability
+                    self.driver.set_page_load_timeout(20)  # Balanced from 15 for stability
+
+                    logger.info("✅ Chrome browser driver initialized with webdriver-manager (automatic version)")
+                    return
+
+                except Exception as wdm_error:
+                    logger.warning(f"⚠️ webdriver-manager failed: {wdm_error}")
+                    logger.info("🔄 Falling back to undetected-chromedriver...")
+
+            # Fallback to undetected-chromedriver without hardcoded version
+            logger.info("🔄 Using undetected-chromedriver with automatic version detection...")
+
             # Setup Chrome options for optimal performance and reliability
             options = uc.ChromeOptions()
 
@@ -59,18 +115,22 @@ class StatewiseSchoolScraper:
             options.add_argument("--memory-pressure-off")
             options.add_argument("--max_old_space_size=4096")
 
-            # Initialize Chrome driver
-            self.driver = uc.Chrome(options=options, version_main=138)
+            # Initialize Chrome driver without hardcoded version (auto-detect)
+            self.driver = uc.Chrome(options=options)  # Removed version_main=138
             self.driver.maximize_window()
 
             # Balanced timeouts for reliability and speed
             self.driver.implicitly_wait(5)  # Balanced from 3 for stability
             self.driver.set_page_load_timeout(20)  # Balanced from 15 for stability
 
-            logger.info("✅ Chrome browser driver initialized with optimized settings")
+            logger.info("✅ Chrome browser driver initialized with undetected-chromedriver (auto-version)")
+
         except Exception as e:
             logger.error(f"❌ Failed to initialize Chrome driver: {e}")
-            logger.error("Please ensure Chrome browser is installed and updated")
+            logger.error("💡 Solutions:")
+            logger.error("   1. Install webdriver-manager: pip install webdriver-manager")
+            logger.error("   2. Update Chrome browser to latest version")
+            logger.error("   3. Clear ChromeDriver cache and try again")
             raise
 
     def navigate_to_portal(self, max_retries=3):
